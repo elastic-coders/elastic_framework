@@ -7,6 +7,7 @@ class ECUserSignupSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = get_user_model()
+        exclude = ('password',)
 
     def to_native(self, obj):
         return super(ECUserSignupSerializer, self).to_native(obj)
@@ -29,6 +30,12 @@ class ECUserSignupSerializer(serializers.ModelSerializer):
     def to_python(self):
         pass
     
+
+class ECUserSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = get_user_model()
+        exclude = ('password',)
 
 class ECUserResponseSerializerClass(serializers.ModelSerializer):
 

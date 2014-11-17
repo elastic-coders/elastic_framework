@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.generics import (GenericAPIView, ListCreateAPIView,
                                      RetrieveUpdateAPIView)
 from rest_framework.response import Response
-from rest_framework.exceptions import ParseError
+from rest_framework.exceptions import ParseError, PermissionDenied
 from rest_framework import permissions
 from rest_framework import status
 
@@ -15,7 +15,8 @@ from provider.oauth2.models import AccessToken, Client
 
 from elastic_framework.core.exceptions import APIError
 
-from .serializers import ECUserSignupSerializer, ECUserResponseSerializerClass
+from .serializers import (ECUserSignupSerializer, ECUserResponseSerializerClass,
+                          ECUserSerializer)
 from .utils import create_token, get_token_from_request
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,9 @@ class Oauth2ECUserListView(GenericAPIView):
     permission_classes = (permissions.AllowAny,)
     authentication_classes = ()
     token = {}
+
+    def get_queryset(self):
+        return get_user_model().objects.all()
 
     def get_serializer_context(self):
         ctx = super(Oauth2ECUserListView, self).get_serializer_context()
@@ -91,9 +95,26 @@ class Oauth2ECUserListView(GenericAPIView):
         return Response(response_data,
                         status=status.HTTP_201_CREATED)
 
+class Oauth2ECUserView(GenericAPIView):
+
+    serializer_class = ECUserSerializer
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get_queryset(self):
+        return get_user_model().objects.all()
+
+    def get(self, request, *args, **kwargs):
+        user = self.get_object()
+        if not request.user == user:
+            raise PermissionDenied()
+        user_serializer = self.get_serializer(instance=user)
+        return Response(user_serializer.data,
+                        status=200)
+
+
 class Oauth2ECUserLoginView(GenericAPIView):
 
-    serializer_class = ECUserResponseSerializerClass
+    serializer_class = ECUserSignupSerializer
     permission_classes = (permissions.AllowAny,)
 
     def get_serializer_context(self):
