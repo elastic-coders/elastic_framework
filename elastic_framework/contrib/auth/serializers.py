@@ -36,6 +36,12 @@ class ECUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = get_user_model()
         exclude = ('password',)
+        read_only_fields = ['id', 'password']
+
+    # XXX TODO: password field could be customized by developer in user model
+    # we have to handle in serializer method password field as read_only
+    # At the moment we assume that password field name is "password"
+
 
 class ECUserResponseSerializerClass(serializers.ModelSerializer):
 

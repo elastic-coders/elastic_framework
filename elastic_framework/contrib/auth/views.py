@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.generics import (GenericAPIView, ListCreateAPIView,
                                      RetrieveUpdateAPIView)
 from rest_framework.response import Response
-from rest_framework.exceptions import ParseError, PermissionDenied
+from rest_framework.exceptions import ParseError
 from rest_framework import permissions
 from rest_framework import status
 
@@ -18,6 +18,7 @@ from elastic_framework.core.exceptions import APIError
 from .serializers import (ECUserSignupSerializer, ECUserResponseSerializerClass,
                           ECUserSerializer)
 from .utils import create_token, get_token_from_request
+from .permissions import check_user_is_owner
 
 logger = logging.getLogger(__name__)
 
@@ -105,12 +106,25 @@ class Oauth2ECUserView(GenericAPIView):
 
     def get(self, request, *args, **kwargs):
         user = self.get_object()
-        if not request.user == user:
-            raise PermissionDenied()
+        check_user_is_owner(user, request)
         user_serializer = self.get_serializer(instance=user)
         return Response(user_serializer.data,
                         status=200)
 
+    def patch(self, request, *args, **kwargs):
+        user = self.get_object()
+        check_user_is_owner(user, request)
+        data = request.data
+        with transaction.atomic():
+            user_serializer = self.get_serializer(instance=user, data=data,
+                                                  partial=True)
+            if not user_serializer.is_valid():
+                raise APIError(status=400,
+                               message=user_serializer.errors,
+                               show=True)
+            user_serializer.save()
+            return Response(status=200,
+                            data=user_serializer.data)
 
 class Oauth2ECUserLoginView(GenericAPIView):
 
