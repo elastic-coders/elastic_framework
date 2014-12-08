@@ -4,7 +4,6 @@ import logging
 from django.db import transaction
 from django.utils.translation import ugettext as _
 from django.contrib.auth import get_user_model
-from django.shortcuts import get_object_or_404
 from rest_framework.generics import (GenericAPIView, ListCreateAPIView,
                                      RetrieveUpdateAPIView)
 from rest_framework.response import Response
@@ -114,7 +113,7 @@ class Oauth2ECUserView(GenericAPIView):
                         status=200)
 
     def patch(self, request, *args, **kwargs):
-        user = self.get_object_or_404()
+        user = self.get_object()
         check_user_is_owner(user, request)
         data = request.data
         with transaction.atomic():
