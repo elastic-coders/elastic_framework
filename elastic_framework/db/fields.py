@@ -50,8 +50,8 @@ class CharListField(models.TextField):
         return value
 
 
-add_introspection_rules([], ["^elastic_frameworks\.db\.fields\.CountryField"])
+add_introspection_rules([], ["^elastic_framework\.db\.fields\.CountryField"])
 
-add_introspection_rules([], ["^elastic_frameworks\.db\.fields\.CurrencyField"])
+add_introspection_rules([], ["^elastic_framework\.db\.fields\.CurrencyField"])
 
-add_introspection_rules([], ["^elastic_frameworks\.db\.fields\.CharListField"])
+add_introspection_rules([], ["^elastic_framework\.db\.fields\.CharListField"])
