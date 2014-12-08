@@ -2,7 +2,7 @@
 
 from setuptools import setup, find_packages
 
-install_requires = ["Django==1.6.1", "djangorestframework==2.3.12"]
+install_requires = ["Django==1.6.1", "djangorestframework==3.0.0"]
 
 import sys
 
