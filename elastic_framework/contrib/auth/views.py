@@ -4,6 +4,7 @@ import logging
 from django.db import transaction
 from django.utils.translation import ugettext as _
 from django.contrib.auth import get_user_model
+from django.shortcuts import get_object_or_404
 from rest_framework.generics import (GenericAPIView, ListCreateAPIView,
                                      RetrieveUpdateAPIView)
 from rest_framework.response import Response
