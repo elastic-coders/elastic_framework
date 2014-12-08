@@ -8,7 +8,7 @@ import sys
 
 setup(
     name='elastic_framework',
-    version='0.0.1',
+    version='0.0.2',
     description='A python/django framework to increase your productivity',
     author='Elastic Coders - Davide Scatto',
     author_email='davidescatto@elastic-coders.com',
