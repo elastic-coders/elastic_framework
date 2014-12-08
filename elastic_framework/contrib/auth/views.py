@@ -77,14 +77,15 @@ class Oauth2ECUserListView(GenericAPIView):
                 raise APIError(code='unauthorized',
                                status_code=status.HTTP_401_UNAUTHORIZED,
                                message='OAuth client not authorized')
-            user = user_serializer.create(user_serializer._validated_data)
+            user = user_serializer.create(user_serializer.validated_data)
             # set status only if defined in user model
             if status_field != '' and active_status_value != '':
                 setattr(user_model, status_field, active_status_value)
             # password field is required
             # if no password is defined a system error MUST return!!!
-            user.set_password(user_serializer.\
-                                  _validated_data[password_fieldname])
+            user.set_password(
+                user_serializer.validated_data[password_fieldname]
+            )
             user.save()
 
             # user is signed up, give him the token
@@ -112,7 +113,7 @@ class Oauth2ECUserView(GenericAPIView):
                         status=200)
 
     def patch(self, request, *args, **kwargs):
-        user = self.get_object()
+        user = self.get_object_or_404()
         check_user_is_owner(user, request)
         data = request.data
         with transaction.atomic():
