@@ -3,6 +3,7 @@
 '''
 
 from rest_framework.fields import ChoiceField
+from rest_framework.exceptions import ValidationError
 
 
 class DisplayFieldWithChoice(ChoiceField):
@@ -25,12 +26,12 @@ class DisplayFieldWithChoice(ChoiceField):
     def valid_value(self, value):
         return value in self.forward
 
-    def from_native(self, value):
+    def run_validation(self, value):
         try:
-            return self.revert[value]
+            return self.revert.get(value)
         except KeyError:
             raise ValidationError('{}: invalid value for choice field'.\
                                       format(value))
 
-    def to_native(self, value):
-        return self.forward[value]
+    def to_representation(self, value):
+        return self.forward.get(value)
