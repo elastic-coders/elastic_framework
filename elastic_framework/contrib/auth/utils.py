@@ -19,4 +19,4 @@ def get_token_from_request(request):
         token = request.META['HTTP_AUTHORIZATION']
     except:
         raise PermissionDenied()
-    return token[:7]
+    return token[7:]

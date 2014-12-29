@@ -11,3 +11,4 @@ class User(AbstractBaseUser):
     '''base model definition for user authentication
     Define custom model extending this one to add field or other issues
     '''
+

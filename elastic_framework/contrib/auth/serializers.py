@@ -54,7 +54,12 @@ class ECUserResponseSerializerClass(serializers.ModelSerializer):
         if not self.context or not self.context.get('token', None):
             raise ValueError('token field required in context from view')
         data['_embedded'] = {}
-        data['_embedded']['oauth'] = {'access_token': self.\
-                                          context['token'].token,
-                                      'grant_type': 'password'}
+        if self.context.get('authentication_type') == 'oauth':
+            data['_embedded']['oauth'] = {'accessToken': self.\
+                                              context['token'].token,
+                                          'grant_type': 'password'}
+        else:
+            data['_embedded']['facebookAuth'] = {'accessToken': self.\
+                                                     context['token'].token,
+                                                 'grant_type': 'facebook'}
         return data
