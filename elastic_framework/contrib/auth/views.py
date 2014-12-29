@@ -1,5 +1,6 @@
 
 import logging
+import uuid
 
 from django.db import transaction
 from django.utils.translation import ugettext as _
@@ -19,6 +20,8 @@ from .serializers import (ECUserSignupSerializer, ECUserResponseSerializerClass,
                           ECUserSerializer)
 from .utils import create_token, get_token_from_request
 from .permissions import check_user_is_owner
+from .facebook import facebook_authentication
+
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +41,14 @@ class Oauth2ECUserListView(GenericAPIView):
     def get_serializer_context(self):
         ctx = super(Oauth2ECUserListView, self).get_serializer_context()
         ctx['token'] = self.token
+        ctx['authentication_type'] = self.authentication_type
         return ctx
 
     def post(self, request, *args, **kwargs):
         # retrieve the serializer to validate data
         user_model = get_user_model()
         user_serializer = self.\
-            signup_serializer_class(data=request.data, partial=True)
+            signup_serializer_class(data=request.DATA, partial=True)
         if not user_serializer.is_valid():
             raise ParseError(user_serializer.errors)
         # user = user_serializer.create(user_serializer.validated_data)
@@ -55,21 +59,45 @@ class Oauth2ECUserListView(GenericAPIView):
             password_fieldname = user_model.PASSWORD_FIELD or 'password'
             status_field = user_model.STATUS_FIELD or ''
             active_status_value = user_model.ACTIVE_STATUS_VALUE or ''
+            facebook_user_id_fieldname = getattr(
+                user_model, 'FACEBOOK_USER_ID_FIELD', None
+            )
             filt = {username_fieldname: user_serializer._validated_data}
             if user_model.objects.filter(**filt).exists():
                 raise APIError(code='already_existent',
                                status_code=status.HTTP_400_BAD_REQUEST,
-                               message=_('User already signed up'),
+                               message='User already signed up',
                                show=True)
-
-            # Check application instance due to oauth authentication
-            # TODO: check application secret
-            try:
-                client_id = request.DATA['_embedded']['oauth']['client_id']
-            except KeyError:
-                raise APIError(code='unauthorized_client',
-                               status_code=status.HTTP_400_BAD_REQUEST,
-                               message='Missing client_id')
+            # check now for authentication flow type...
+            if request.DATA['_embedded'].get('facebookAuth'):
+                self.authentication_type = 'facebook'
+                facebook_signup_data, msg = facebook_authentication(
+                    request.DATA['_embedded']['facebookAuth']
+                )
+                if not facebook_signup_data:
+                    raise APIError(status_code=400,
+                                   message='Facebook authentication failed')
+                if facebook_user_id_fieldname:
+                    user_serializer.\
+                        validated_data[facebook_user_id_fieldname] =\
+                        facebook_signup_data['id']
+                user_serializer.validated_data[password_fieldname] =\
+                    uuid.uuid4()
+                try:
+                    client_id =\
+                        request.DATA['_embedded']['facebookAuth']['client_id']
+                except KeyError:
+                    raise APIError(code='unauthorized_client',
+                                   status_code=status.HTTP_400_BAD_REQUEST,
+                                   message='Missing client_id')
+            else:
+                self.authentication_type = 'oauth'
+                try:
+                    client_id = request.DATA['_embedded']['oauth']['client_id']
+                except KeyError:
+                    raise APIError(code='unauthorized_client',
+                                   status_code=status.HTTP_400_BAD_REQUEST,
+                                   message='Missing client_id')
             try:
                 oauth_client = Client.objects.get(client_id=client_id)
             except Client.DoesNotExist:
@@ -115,7 +143,7 @@ class Oauth2ECUserView(GenericAPIView):
     def patch(self, request, *args, **kwargs):
         user = self.get_object()
         check_user_is_owner(user, request)
-        data = request.data
+        data = request.DATA
         with transaction.atomic():
             user_serializer = self.get_serializer(instance=user, data=data,
                                                   partial=True)
@@ -141,16 +169,25 @@ class Oauth2ECUserLoginView(GenericAPIView):
         user_model = get_user_model()
         username_fieldname = user_model.USERNAME_FIELD or 'username'
         password_fieldname = user_model.PASSWORD_FIELD or 'password'
-        username = request.data[username_fieldname]
-        password = request.data[password_fieldname]
-        client_id = request.data['client_id']
+        username = request.DATA[username_fieldname]
+        # password is not required for facebook authentication
+        password = request.DATA.get(password_fieldname, None)
+        client_id = request.DATA['client_id']
+        facebook_auth_data = None
+        if request.DATA['grant_type'] == 'facebook':
+            facebook_auth_data, msg = facebook_authentication(
+                request.DATA['_embedded']['facebookAuth']
+            )
+            if not facebook_auth_data:
+                raise APIError(status_code=400,
+                               message=_('facebook authentication failed'))
         # chech for client_id for oauth authentication
         try:
             client = Client.objects.get(client_id=client_id)
         except:
             raise APIError(code='client_unauthorized',
                            status_code=404,
-                           message=-('unauthorized client'),
+                           message=_('unauthorized client'),
                            show=True)
         # check if user is signed up
         try:
@@ -161,8 +198,22 @@ class Oauth2ECUserLoginView(GenericAPIView):
                            status_code=404,
                            message=_('user not found'),
                            show=True)
+        # check if facebook authentication flow
+        if facebook_auth_data:
+            facebook_user_id_fieldname = getattr(
+                user_model, 'FACEBOOK_USER_ID_FIELD', None
+            )
+            if not facebook_user_id_fieldname:
+                raise APIError(status_code=400,
+                               message=_('Could not verify facebook auth'))
+            facebook_user_id = getattr(
+                user, facebook_user_id_fieldname, None
+            )
+            if facebook_user_id != facebook_auth_data['id']:
+                raise APIError(status_code=400,
+                               message=_('facebook authentication failed'))
         # check if password is ok
-        if not user.check_password(password):
+        elif not user.check_password(password):
             raise APIError(code='wrong_password',
                            status_code=400,
                            message=_('wrong password'),
@@ -171,7 +222,7 @@ class Oauth2ECUserLoginView(GenericAPIView):
         self.request.user = user
         self.token = create_token(client=client, user=user)
         user_data = self.get_serializer(instance=user).data
-        data = {'access_token': self.token.token,
+        data = {'accessToken': self.token.token,
                 'embedded': {'user': user_data}}
         return Response(data, status=200)
 
