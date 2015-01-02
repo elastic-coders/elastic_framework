@@ -21,6 +21,7 @@ from .serializers import (ECUserSignupSerializer, ECUserResponseSerializerClass,
 from .utils import create_token, get_token_from_request
 from .permissions import check_user_is_owner
 from .facebook import facebook_authentication
+from .api import get_base_field_user_model
 
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class Oauth2ECUserListView(GenericAPIView):
     permission_classes = (permissions.AllowAny,)
     authentication_classes = ()
     token = {}
+    authentication_type = ''
 
     def get_queryset(self):
         return get_user_model().objects.all()
@@ -55,12 +57,10 @@ class Oauth2ECUserListView(GenericAPIView):
         with transaction.atomic():
             # account name must be unique
             # at the moment account name is the same of email
-            username_fieldname = user_model.USERNAME_FIELD or 'username'
-            password_fieldname = user_model.PASSWORD_FIELD or 'password'
-            status_field = user_model.STATUS_FIELD or ''
-            active_status_value = user_model.ACTIVE_STATUS_VALUE or ''
-            facebook_user_id_fieldname = getattr(
-                user_model, 'FACEBOOK_USER_ID_FIELD', None
+            (username_fieldname, password_fieldname, 
+             status_field, active_status_value,
+             facebook_user_id_fieldname) = get_base_field_user_model(
+                user_model
             )
             filt = {username_fieldname: user_serializer._validated_data}
             if user_model.objects.filter(**filt).exists():
@@ -159,6 +159,8 @@ class Oauth2ECUserLoginView(GenericAPIView):
 
     serializer_class = ECUserSignupSerializer
     permission_classes = (permissions.AllowAny,)
+    token = {}
+    authentication_type = ''
 
     def get_serializer_context(self):
         ctx = super(Oauth2ECUserLoginView, self).get_serializer_context()
@@ -167,8 +169,11 @@ class Oauth2ECUserLoginView(GenericAPIView):
 
     def post(self, request, *args, **kwargs):
         user_model = get_user_model()
-        username_fieldname = user_model.USERNAME_FIELD or 'username'
-        password_fieldname = user_model.PASSWORD_FIELD or 'password'
+        (username_fieldname, password_fieldname, 
+         status_field, active_status_value,
+         facebook_user_id_fieldname) = get_base_field_user_model(
+            user_model
+        )
         username = request.DATA[username_fieldname]
         # password is not required for facebook authentication
         password = request.DATA.get(password_fieldname, None)
@@ -194,30 +199,59 @@ class Oauth2ECUserLoginView(GenericAPIView):
             filt = {username_fieldname: username}
             user = user_model.objects.get(**filt)
         except user_model.DoesNotExist:
-            raise APIError(code='not_found',
-                           status_code=404,
-                           message=_('user not found'),
-                           show=True)
-        # check if facebook authentication flow
-        if facebook_auth_data:
-            facebook_user_id_fieldname = getattr(
-                user_model, 'FACEBOOK_USER_ID_FIELD', None
-            )
-            if not facebook_user_id_fieldname:
+            # if no authentication with facebook then raise user not found!
+            if not facebook_auth_data:
+                raise APIError(code='not_found',
+                               status_code=404,
+                               message=_('user not found'),
+                               show=True)
+            else:
+                user = None
+        if not user:
+            # facebook authentication required!
+            user_serializer = self.get_serializer(data=request.DATA,
+                                                  partial=True)
+            if not user_serializer.is_valid():
                 raise APIError(status_code=400,
-                               message=_('Could not verify facebook auth'))
-            facebook_user_id = getattr(
-                user, facebook_user_id_fieldname, None
+                               message=user_serializer.errors)
+            if facebook_user_id_fieldname:
+                user_serializer.\
+                    validated_data[facebook_user_id_fieldname] =\
+                    facebook_auth_data['id']
+            user_serializer.validated_data[password_fieldname] =\
+                uuid.uuid4()
+            user = user_serializer.create(user_serializer.validated_data)
+            # set status only if defined in user model
+            if status_field != '' and active_status_value != '':
+                setattr(user_model, status_field, active_status_value)
+            # password field is required
+            # if no password is defined a system error MUST return!!!
+            user.set_password(
+                user_serializer.validated_data[password_fieldname]
             )
-            if facebook_user_id != facebook_auth_data['id']:
-                raise APIError(status_code=400,
-                               message=_('facebook authentication failed'))
-        # check if password is ok
-        elif not user.check_password(password):
-            raise APIError(code='wrong_password',
-                           status_code=400,
-                           message=_('wrong password'),
-                           show=True)
+            user.save()
+        else:
+            # the user was already created on login
+            # then check if facebook authentication flow
+            if facebook_auth_data:
+                facebook_user_id_fieldname = getattr(
+                    user_model, 'FACEBOOK_USER_ID_FIELD', None
+                )
+                if not facebook_user_id_fieldname:
+                    raise APIError(status_code=400,
+                                   message=_('Could not verify facebook auth'))
+                facebook_user_id = getattr(
+                    user, facebook_user_id_fieldname, None
+                )
+                if facebook_user_id != facebook_auth_data['id']:
+                    raise APIError(status_code=400,
+                                   message=_('facebook authentication failed'))
+            # otherwise check if password is ok (oauth authentication)
+            elif not user.check_password(password):
+                raise APIError(code='wrong_password',
+                               status_code=400,
+                               message=_('wrong password'),
+                               show=True)
         # all, ok we can authenticate this user!!! :-)
         self.request.user = user
         self.token = create_token(client=client, user=user)
