@@ -16,5 +16,6 @@ setup(
     url='https://github.com/elastic-coders/elastic_framework.git',
     packages=find_packages(),
     install_requires=install_requires,
+    include_package_data=True,
     zip_safe=True,
 )
