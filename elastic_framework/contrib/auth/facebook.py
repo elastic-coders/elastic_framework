@@ -12,7 +12,7 @@ PROFILE_URL = 'https://graph.facebook.com/user/{}'
 VERIFY_URL = 'https://graph.facebook.com/v2.2/me?access_token={}'
 
 
-def facebook_authentication(auth_data):
+def facebook_authentication(facebook_token, facebook_id):
     ''' Verify accessToken passed in request data with facebook API
     to validate signup with facebook
     Verification is made asking for user profile using access token contained
@@ -25,10 +25,10 @@ def facebook_authentication(auth_data):
     Returns:
       a dictionary containing user id that could be save into user model
     '''
-    if not 'accessToken' in auth_data or not 'userId' in auth_data:
+    if not facebook_token or not facebook_id:
         return None, u'Insufficent data in auth request'
     req = requests.get(
-        VERIFY_URL.format(auth_data['accessToken'])
+        VERIFY_URL.format(facebook_token)
     )
     facebook_data = req.json()
     if len(facebook_data) == 0:
@@ -36,7 +36,7 @@ def facebook_authentication(auth_data):
     if not 'id' in facebook_data:
         return None, u'Authentication failed'
     user_id = facebook_data['id']
-    if user_id != auth_data['userId']:
+    if user_id != facebook_id:
         return None, u'Wrong user id'
     return facebook_data, None
 

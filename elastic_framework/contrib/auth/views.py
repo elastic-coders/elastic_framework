@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.generics import (GenericAPIView, ListCreateAPIView,
                                      RetrieveUpdateAPIView)
 from rest_framework.response import Response
-from rest_framework.exceptions import ParseError
+from rest_framework.exceptions import ParseError, PermissionDenied
 from rest_framework import permissions
 from rest_framework import status
 
@@ -69,7 +69,7 @@ class Oauth2ECUserListView(GenericAPIView):
                                message='User already signed up',
                                show=True)
             # check now for authentication flow type...
-            if request.DATA['_embedded'].get('facebookAuth'):
+            if request.DATA.get('_embedded', {}).get('facebookAuth'):
                 self.authentication_type = 'facebook'
                 facebook_signup_data, msg = facebook_authentication(
                     request.DATA['_embedded']['facebookAuth']
@@ -85,19 +85,19 @@ class Oauth2ECUserListView(GenericAPIView):
                     uuid.uuid4()
                 try:
                     client_id =\
-                        request.DATA['_embedded']['facebookAuth']['client_id']
+                        request.DATA['_embedded']['facebookAuth']['clientId']
                 except KeyError:
                     raise APIError(code='unauthorized_client',
                                    status_code=status.HTTP_400_BAD_REQUEST,
-                                   message='Missing client_id')
+                                   message='Missing client id')
             else:
                 self.authentication_type = 'oauth'
                 try:
-                    client_id = request.DATA['_embedded']['oauth']['client_id']
+                    client_id = request.DATA['clientId']
                 except KeyError:
                     raise APIError(code='unauthorized_client',
                                    status_code=status.HTTP_400_BAD_REQUEST,
-                                   message='Missing client_id')
+                                   message='Missing client id')
             try:
                 oauth_client = Client.objects.get(client_id=client_id)
             except Client.DoesNotExist:
@@ -128,27 +128,25 @@ class Oauth2ECUserListView(GenericAPIView):
 class Oauth2ECUserView(GenericAPIView):
 
     serializer_class = ECUserSerializer
-    permission_classes = (permissions.IsAuthenticated,)
+    # permissions will be handled on specific views
 
     def get_queryset(self):
         return get_user_model().objects.all()
 
     def get(self, request, *args, **kwargs):
         user = self.get_object()
-        check_user_is_owner(user, request)
         user_serializer = self.get_serializer(instance=user)
         return Response(user_serializer.data,
                         status=200)
 
     def patch(self, request, *args, **kwargs):
         user = self.get_object()
-        check_user_is_owner(user, request)
         data = request.DATA
         with transaction.atomic():
             user_serializer = self.get_serializer(instance=user, data=data,
                                                   partial=True)
             if not user_serializer.is_valid():
-                raise APIError(status=400,
+                raise APIError(status_code=400,
                                message=user_serializer.errors,
                                show=True)
             user_serializer.save()
@@ -174,18 +172,20 @@ class Oauth2ECUserLoginView(GenericAPIView):
          facebook_user_id_fieldname) = get_base_field_user_model(
             user_model
         )
-        username = request.DATA[username_fieldname]
-        # password is not required for facebook authentication
-        password = request.DATA.get(password_fieldname, None)
-        client_id = request.DATA['client_id']
+        client_id = request.DATA['clientId']
         facebook_auth_data = None
-        if request.DATA['grant_type'] == 'facebook':
+        if request.DATA['grantType'] == 'facebook':
             facebook_auth_data, msg = facebook_authentication(
-                request.DATA['_embedded']['facebookAuth']
+                request.DATA['facebookAccessToken'],
+                request.DATA['facebookUserId']
             )
             if not facebook_auth_data:
                 raise APIError(status_code=400,
                                message=_('facebook authentication failed'))
+        else:
+            # username and password are not required for facebook authentication
+            username = request.DATA.get(username_fieldname, None)
+            password = request.DATA.get(password_fieldname, None)
         # chech for client_id for oauth authentication
         try:
             client = Client.objects.get(client_id=client_id)
@@ -194,6 +194,13 @@ class Oauth2ECUserLoginView(GenericAPIView):
                            status_code=404,
                            message=_('unauthorized client'),
                            show=True)
+        if facebook_auth_data:
+            # use email as username if facebook auth
+            username = facebook_auth_data.get('email')
+            if not username:
+                raise APIError(status_code=400,
+                               message=_('no grant for facebook email'),
+                               show=True)
         # check if user is signed up
         try:
             filt = {username_fieldname: username}
@@ -209,7 +216,7 @@ class Oauth2ECUserLoginView(GenericAPIView):
                 user = None
         if not user:
             # facebook authentication required!
-            user_serializer = self.get_serializer(data=request.DATA,
+            user_serializer = self.get_serializer(data=filt,
                                                   partial=True)
             if not user_serializer.is_valid():
                 raise APIError(status_code=400,
