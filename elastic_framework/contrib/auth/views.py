@@ -72,7 +72,8 @@ class Oauth2ECUserListView(GenericAPIView):
             if request.DATA.get('_embedded', {}).get('facebookAuth'):
                 self.authentication_type = 'facebook'
                 facebook_signup_data, msg = facebook_authentication(
-                    request.DATA['_embedded']['facebookAuth']
+                    request.DATA['_embedded']['facebookAuth']['accessToken'],
+                    request.DATA['_embedded']['facebookAuth']['userId']
                 )
                 if not facebook_signup_data:
                     raise APIError(status_code=400,
