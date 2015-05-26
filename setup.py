@@ -2,8 +2,9 @@
 
 from setuptools import setup, find_packages
 
-install_requires = ["Django==1.6.1", "djangorestframework==3.0.0",
-                    "requests==2.5.0"]
+install_requires = ["Django==1.8.2", "djangorestframework==3.1.2",
+                    "requests==2.5.0", "django-oauth-toolkit==0.8.1",
+                    "django-cors-headers==1.1.0"]
 
 import sys
 
