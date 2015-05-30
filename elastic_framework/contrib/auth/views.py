@@ -12,7 +12,7 @@ from rest_framework.exceptions import ParseError, PermissionDenied
 from rest_framework import permissions
 from rest_framework import status
 
-from provider.oauth2.models import AccessToken, Client
+from oauth2_provider.models import AccessToken, Application
 
 from elastic_framework.core.exceptions import APIError
 
@@ -100,8 +100,8 @@ class Oauth2ECUserListView(GenericAPIView):
                                    status_code=status.HTTP_400_BAD_REQUEST,
                                    message='Missing client id')
             try:
-                oauth_client = Client.objects.get(client_id=client_id)
-            except Client.DoesNotExist:
+                oauth_app = Application.objects.get(client_id=client_id)
+            except Apllication.DoesNotExist:
                 logger.warning(u'bad oauth client {}'.format(client_id))
                 raise APIError(code='unauthorized',
                                status_code=status.HTTP_401_UNAUTHORIZED,
@@ -113,12 +113,12 @@ class Oauth2ECUserListView(GenericAPIView):
             # password field is required
             # if no password is defined a system error MUST return!!!
             user.set_password(
-                user_serializer.validated_data[password_fieldname]
+                request.DATA[password_fieldname]
             )
             user.save()
 
             # user is signed up, give him the token
-            self.token = create_token(user=user, client=oauth_client)
+            self.token = create_token(user=user, app=oauth_app)
             response_data = self.get_serializer(instance=user).data
             # add token to response for oauth2 authentication
             # TODO: embed this info into serializer
